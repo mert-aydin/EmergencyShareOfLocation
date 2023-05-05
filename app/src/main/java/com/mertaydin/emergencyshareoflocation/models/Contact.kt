@@ -1,6 +1,6 @@
-package com.mertaydin.emergencyshareoflocation
+package com.mertaydin.emergencyshareoflocation.models
 
 data class Contact(
-    var name: String? = null,
-    var number: String? = null,
+        val name: String,
+        val number: String,
 )

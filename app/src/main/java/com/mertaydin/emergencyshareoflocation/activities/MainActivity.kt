@@ -1,38 +1,37 @@
-package com.mertaydin.emergencyshareoflocation
+package com.mertaydin.emergencyshareoflocation.activities
 
 import android.Manifest
-import android.annotation.SuppressLint
+import android.content.Context
 import android.content.Intent
-import android.content.SharedPreferences
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Bundle
 import android.provider.ContactsContract
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
-import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import com.google.android.material.chip.Chip
+import com.google.gson.Gson
+import com.google.gson.reflect.TypeToken
+import com.mertaydin.emergencyshareoflocation.R
 import com.mertaydin.emergencyshareoflocation.databinding.ActivityMainBinding
-
-private const val PICK_CONTACT_REQUEST = 1
-private const val READ_CONTACTS_PERMISSION_REQUEST_CODE = 1
-private const val SEND_SMS_PERMISSION_REQUEST_CODE = 2
-private const val LOCATION_PERMISSION_REQUEST_CODE = 3
+import com.mertaydin.emergencyshareoflocation.models.Contact
+import com.mertaydin.emergencyshareoflocation.utils.Constants.PICKED_CONTACTS
+import com.mertaydin.emergencyshareoflocation.utils.Constants.READ_CONTACTS_PERMISSION_REQUEST_CODE
 
 class MainActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivityMainBinding
     private val contacts = arrayListOf<Contact>()
+    private val pickContactLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { it?.data?.data?.let { pickContact(it) } }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
 
+        readContactsFromPersistentMemory()
         resetChips()
-
-        // TODO: keep contacts on persistent memory
     }
 
     private fun resetChips() {
@@ -57,17 +56,35 @@ class MainActivity : AppCompatActivity() {
         })
     }
 
-    private fun addContact() {
-        startActivityForResult(Intent(Intent.ACTION_PICK, Uri.parse("content://contacts")).apply { type = ContactsContract.CommonDataKinds.Phone.CONTENT_TYPE }, PICK_CONTACT_REQUEST)
+    private fun readContactsFromPersistentMemory() {
+        contacts.addAll(Gson().fromJson(getPreferences(Context.MODE_PRIVATE).getString(PICKED_CONTACTS, Gson().toJson(arrayListOf<Contact>())), object : TypeToken<List<Contact>>() {}.type))
     }
 
     private fun writeContactsToPersistentMemory() {
-
+        with(getPreferences(Context.MODE_PRIVATE).edit()) {
+            putString(PICKED_CONTACTS, Gson().toJson(contacts))
+            apply()
+        }
     }
 
-    private fun checkPermission(permission: String, requestCode: Int, onPermissionGranted: () -> Unit) {
+    private fun addContact() {
+        pickContactLauncher.launch(Intent(Intent.ACTION_PICK).apply { type = ContactsContract.CommonDataKinds.Phone.CONTENT_TYPE })
+    }
+
+    private fun pickContact(uri: Uri) {
+        contentResolver?.query(uri, arrayOf(ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME_PRIMARY, ContactsContract.CommonDataKinds.Phone.NORMALIZED_NUMBER), null, null, null)?.apply {
+            moveToFirst()
+            contacts.add(Contact(getString(0), getString(1)))
+            close()
+        }
+
+        resetChips()
+        writeContactsToPersistentMemory()
+    }
+
+    private fun checkPermission(permission: String, requestCode: Int, ifPermissionAlreadyGranted: () -> Unit) {
         if (ContextCompat.checkSelfPermission(this, permission) == PackageManager.PERMISSION_GRANTED) {
-            onPermissionGranted()
+            ifPermissionAlreadyGranted()
         } else {
             requestPermissions(arrayOf(permission), requestCode)
         }
@@ -82,17 +99,4 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    @SuppressLint("Range")
-    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
-        super.onActivityResult(requestCode, resultCode, data)
-        if (resultCode != RESULT_OK) return
-        if (requestCode == PICK_CONTACT_REQUEST) {
-            val cursor = contentResolver.query(data!!.data!!, arrayOf(ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME, ContactsContract.CommonDataKinds.Phone.NUMBER), null, null, null)!!
-            cursor.moveToFirst()
-            contacts.add(Contact(cursor.getString(cursor.getColumnIndex(ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME)), cursor.getString(cursor.getColumnIndex(ContactsContract.CommonDataKinds.Phone.NUMBER))))
-            cursor.close()
-
-            resetChips()
-        }
-    }
 }
